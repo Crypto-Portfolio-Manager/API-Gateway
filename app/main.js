@@ -1,65 +1,67 @@
-const grpc = require('@grpc/grpc-js');
-const protoLoader = require('@grpc/proto-loader');
-const path = require('path');
+const {clientUser, clientPortfolio} = require('../config/proto.js')
 const http = require('http');
 const {registerUser, loginUser} = require('../controller/users_controller.js');
-
-
-const PROTO_PATH = '/Users/stepansalikov/CryptoManager/API-Gateway/proto/user.proto'
-const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
-  keepCase: true,
-  longs: String,
-  enums: String,
-  defaults: true,
-  oneofs: true,
-});
-const usersProto = grpc.loadPackageDefinition(packageDefinition).usersproto;
-const client = new usersProto.Greeter('localhost:50051', grpc.credentials.createInsecure());
-
-
-    
+const {createPortfolio} = require('../controller/portfolio_controller.js')
+const jwt = require('jsonwebtoken');
+const JWT_SECRET = process.env.JWT_SECRET;
 
 const server = http.createServer((req, res) => {
-    if (req.method === 'POST' && req.url === '/register') {
-        let body = '';
-        req.on('data', chunk => {
-            body += chunk.toString();
-        });
-        req.on('end', () => {
-            try {
-                const userData = JSON.parse(body);
-                registerUser(userData, res, client);
-            } catch (error) {
-                res.statusCode = 400;
-                res.end(JSON.stringify({ error: 'Invalid JSON data' }));
-            }
-        });
-    } else {
-        res.statusCode = 404;
-        res.end('Not Found');
-    }
+    let body = '';
+    req.on('data', chunk => {
+        body += chunk.toString();
+    });
+    req.on('end', () => {
+        try {
+            const userData = JSON.parse(body);
+            if (req.method === 'POST' && req.url === '/register') {
+                registerUser(userData, res, clientUser);
+            } else if (req.method === 'POST' && req.url === '/login') {
+                loginUser(userData, res, clientUser);
+            } else if (req.method === 'POST' && req.url === '/createPortfolio') {
+                try {
+                    const authHeader = req.headers['authorization'];
+                    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+                        res.statusCode = 401;
+                        res.end(JSON.stringify({ error: 'Authorization header missing or invalid' }));
+                        return;
+                    }
 
-    if (req.method === 'POST' && req.url === '/login') {
-        let body = '';
-        req.on('data', chunk => {
-            body += chunk.toString();
-        });
-        req.on('end', () => {
-            try {
-                const userData = JSON.parse(body);
-                loginUser(userData, res, client);
-            } catch (error) {
-                res.statusCode = 400;
-                res.end(JSON.stringify({ error: 'Invalid JSON data' }));
+                    const token = authHeader.split(' ')[1];
+                    let decoded;
+                    try {
+                        decoded = jwt.verify(token, JWT_SECRET);
+                    } catch (err) {
+                        res.statusCode = 401;
+                        res.end(JSON.stringify({ error: 'Invalid or expired token' }));
+                        return;
+                    }
+
+                    const email = decoded.email;
+                    if (!email) {
+                        res.statusCode = 400;
+                        res.end(JSON.stringify({ error: 'Email not found in token' }));
+                        return;
+                    }
+
+                    userData.email = email
+
+                    createPortfolio(userData, res, clientPortfolio);
+                    
+                } catch (error) {
+                    res.statusCode = 500;
+                    res.end(JSON.stringify({ error: 'Internal server error' }));
+                }
+            } else {
+                res.statusCode = 404;
+                res.end('Not Found');
             }
-        });
-    } else {
-        res.statusCode = 404;
-        res.end('Not Found');
-    }
+        } catch (error) {
+            res.statusCode = 400;
+            res.end(JSON.stringify({ error: 'Invalid JSON data' }));
+        }
+    });
 });
 
-
-    server.listen(3000, () => {
-        console.log('Server running on http://localhost:3000');
-    });
+server.listen(3000, () => {
+    console.log('Server running on http://localhost:3000');
+});

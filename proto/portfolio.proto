@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package portfolioproto;
+
+
+service Portfolio {
+    rpc CreatePortfolio (CreatePortfolioRequest) returns (CreatePortfolioResponse) {}
+}
+
+message CreatePortfolioRequest {
+    string name = 1;
+    string userId = 2;
+    // string jwt = 3;
+}
+
+message CreatePortfolioResponse {
+    bool success = 1;
+}
+
